@@ -1,0 +1,21 @@
+{
+    "name": "cryodrift/projecttpl",
+    "authors": [
+        {
+            "name": "chrisg"
+        }
+    ],
+    "description": "Project Template to create the cryodrift/fw rootfiles",
+    "type": "project",
+    "license": "Apache-2.0",
+    "version": "0.1.1",
+    "require": {
+        "php": ">=8.4",
+        "cryodrift/fw": "^0.1.0"
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "@php index.php -echo /sys install -dir=\"./vendor/cryodrift\" -dir=\"./src\""
+        ]
+    }
+}

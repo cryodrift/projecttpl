@@ -1,299 +1,186 @@
-# PHP based Site Generator JAMSTACK Style
+### htmlload — Tiny PHP framework with batteries included
 
-### attention the system auth does only run with https cookies ! 
-### on php -S localhost:port index.php without a https router it does not work
-- made with php8.3 and javascript modules and sqlite
-- all the non-dynamic parts are pre-rendered and the dynamic elements are hydrated into the site on the client side.
-- single page app generator
-- everything commandline
+A lean, pluggable runtime that feels like a micro‑framework but ships with practical modules you actually use: a composable core (`sys`), a handy power‑user CLI (`src/shell`), and a password + 2FA user module (`src/user`).
 
-## simple small code base, easy to understand, reusable, interactiv
-
-- prerendered static, dynamic, cacheable
-- api delivering html parts
-- save ui state in url
-
-### Project Structure
-
-- src/appname
-    - Api.php contains methods that build the page parts
-    - Page.php builds the page by using Api
-    - Cli.php contains methods that handle commandline requests
-- src/appname/ui
-- src/appname/ui/...parts
-- src/appname/ui/shared/...parts
-- src/appname/db
-    - Repository.php contains methods that return your data
-    - c_index.sql create indexes
-    - c_tables.sql create tables
-    - c_views.sql create views
-    - c_triggers.sql create trigger
-    - s_table.sql select from
-- src/appname/shared
-- libs/
-- .data/configs...php (generated)
-- /index.php
-- /sys/
-- /sys/cli
-- /sys/tool
-- /sys/js
-- /sys/css
-- /sys/trait
-- /cfg (override configs here)
+- Zero build. Start with `php index.php`.
+- One entry. `index.php` boots the core, resolves handlers, and routes CLI/web requests.
+- Composable. Bring your own modules under `src/**`, or reuse the `sys` utilities.
+- CLI‑first UX. Every handler can expose discoverable `@cli` commands.
+- Web or CLI. Same config model, same handlers.
 
 
-# Template Syntax
+#### Why this project
+You asked for a pragmatic toolkit, not a ceremony. This repo gives you a minimal but capable runtime:
+- Core: request/response, routing, DI-ish object construction, logging, and PSR‑4‑style autoload mapping.
+- Shell: everyday developer utilities (sort, dedupe, replace in streams/files, token tree grouping, screenshots via Chrome).
+- User: small auth kit with password storage and optional Google Authenticator 2FA.
 
-This project ships with a very small, fast HTML templating syntax used by the JAMStack-style renderer (sys/HtmlUi). You write plain HTML and sprinkle it with double-brace placeholders and a few lightweight directives. Most templates live in src/<yourapp>/ui and are used by Api/Page classes.
 
-Core concepts at a glance
-- Variables: {{name}}
-- Attribute injection: <input value="{{name}}" {{readonly}}>
-- Repeat blocks: {{@}}blockName{{@}} ... {{@}}blockName{{@}}
-- File include: {{@file@}}relative/path/to/file.html{{@file@}}
-- I18n/labels: {{Name}} vs data keys like {{Name}}
-- Works great with data-* attributes for client-side hydration (see next section)
+---
 
-Variables and attribute injection
-- Use {{var}} to insert values anywhere in text or attributes.
-- Boolean attributes: provide keys like readonly, disabled, hidden, selected etc. If the key is non-empty, the attribute is rendered; if empty, it disappears.
+### Quickstart
 
-Example (from scaffolding: rechnung/ui/invoiceedit.html)
-```html
-<form id="invoice-form" class="p-4">
-  <div class="mb-3">
-    <label for="inputInvoiceNo" class="form-label">{{Invoice No.}}</label>
-    <input id="inputInvoiceNo" type="text" class="form-control" name="name" value="{{name}}" {{readonly}}>
-  </div>
-  <div class="row g-3 mb-3">
-    <div class="col-md-6">
-      <label for="inputCompany" class="form-label">{{Company}}</label>
-      <select id="inputCompany" class="form-select" name="company_id" {{disabled}}>
-        {{@}}companies{{@}}
-        <option value="{{id}}" {{selected}}>{{name}}</option>
-        {{@}}companies{{@}}
-      </select>
-    </div>
-  </div>
-</form>
+- PHP 8+
+- Run directly (no build step):
+
+```bash
+php index.php
 ```
 
-Repeat blocks (lists)
-- Wrap a region with {{@}}blockName{{@}} markers to declare a repeatable block.
-- In PHP, pass an array under blockName to render one instance per item.
+CLI examples use the same entry point. Use the path to target a module, e.g. `/shell` or `/user`.
 
-Example (from scaffolding: rechnung/ui/invoiceproducts.html)
-```html
-<div id="invoice-products-container" class="mb-3">
-  {{@}}invoice_products{{@}}
-  <div class="row g-2 align-items-end mb-2" data-line-id="{{line_id}}">
-    <div class="col">
-      <input type="text" class="form-control" name="lines[{{line_id}}][product_name]" value="{{product_name}}" placeholder="{{Description}}" required {{readonly}}>
-    </div>
-    <div class="col-2">
-      <input type="number" class="form-control" name="lines[{{line_id}}][quantity]" value="{{quantity}}" placeholder="{{Quantity}}" required {{readonly}}>
-    </div>
-    <div class="col-2">
-      <input type="number" step="0.01" class="form-control" name="lines[{{line_id}}][unit_price]" value="{{unit_price}}" placeholder="{{Unit Price}}" required {{readonly}}>
-    </div>
-    <div class="col-auto">
-      <button class="btn btn-outline-danger btn-remove-line {{hidden}}" type="button">{{Remove}}</button>
-    </div>
-  </div>
-  {{@}}invoice_products{{@}}
-</div>
+```bash
+# List or run a CLI command (examples below)
+php index.php /shell ...
+php index.php /user ...
 ```
 
-Include other template files
-- Use the file include directive to inline another template at build time.
-- Syntax: {{@file@}}relative/path/from/src/<app>/ui{{@file@}}
+Tip: Use `-echo` to print output in some examples if your shell buffers output.
 
-Example (from scaffolding: rechnung/ui/invoiceedit.html)
-```html
-<h5 class="mt-4">{{Line Items}}</h5>
-{{@file@}}rechnung/ui/invoiceproducts.html{{@file@}}
-```
 
-Simple i18n/labels
-- Using Title Case placeholders like {{Name}}, {{Invoice No.}}, {{Save Invoice}} allows you to feed translated strings from the backend.
-- Data keys like {{name}} refer to fields inside your data arrays/objects.
+### Installation and bootstrap
 
-Composing in PHP with HtmlUi
-- Read a file: HtmlUi::fromFile($path, $rootBlock?)
-- Read a string: HtmlUi::fromString($html, $rootBlock?)
-- Select a block: ->fromBlock('blockName')
-- Bind data: ->setAttributes(['blockName' => $listArray, 'name' => 'value', ...])
+This repo is directly runnable. For library use, you can consume the `sys` core as a Composer module inside another project (see `sys/README_CORE.md`). In this repository:
 
-Backend example (used in src/files/Web.php)
-```php
-return HtmlUi::fromFile(__DIR__ . '/ui/files/row.html', 'files')
-  ->fromBlock('files')
-  ->setAttributes(['files_block' => $data, ...$ctx->request()->vars()]);
-```
+- Entry: `index.php`
+  - Registers the `cryodrift\fw` core from `sys/`
+  - Defines include roots for `src/` and `sys/`
+  - Loads config via `Main::readConfig()` and runs via `Main::run()`
 
-Note on Twig-like loops in scaffolding
-- Some scaffold examples show Twig-style loops like {% for product in products %} for illustration. The preferred native syntax in this repo is the {{@}}block{{@}} repeater with data passed via HtmlUi::setAttributes(). If you use Twig blocks, ensure your pipeline renders them before HtmlUi, or convert them to {{@}} blocks.
-
-See also
-- Live data and hydration are done via data-* attributes described below.
-- More examples: src/rechnung/ui/preview.html, products.html, invoiceedit.html, invoiceproducts.html.
-
-# Use data-* attributes to do Anything
-
-## data-scrollable="apiName"
-- 
-- use to load content when scrolling
-- manages state as url param
-- used in ui/memos.html
-
-### data-scrollable-page
-- use to make change the url-param onscroll
-
-```html
-{{@}}memos{{@}}
-<a class="separator g-dh" id="memos_page-{{memos_page}}" data-scrollable-page="{{memos_page}}">Page {{memos_page}}</a>
-{{@}}memos_block{{@}}
-<div id="memo{{id}}" class="card mb-2">
-  <div class="card-body">
-      <button class="btn" href="{{ROUTE}}/{{query}}" data-loader="memo">Show</button>
-      <h5 class="card-title">{{aktiv}} {{status}} {{kat}} {{name}} {{title}}</h5>
-      <p class="card-text">{{shortcontent}}</p>
-  </div>
-</div>
-{{@}}memos_block{{@}}
-{{@}}memos{{@}}
-```
-
-- used in api::memos()
+Key bootstrap lines (from `index.php`):
 
 ```php
-if (count($data)) {
-    $data = HtmlUi::addQuery($ctx, $data, ['id' => 'memo_id'], ['memo_id', 'memos_page', 'memos_search']);
-    return $base->fromBlock('memos')->setAttributes(['memos_block' => $data, ...$ctx->request()->vars()]);
-} else {
-    return HtmlUi::fromString('');
-}
+require_once __DIR__ . '/sys/Main.php';
+Main::$rootdir = dirname(Phar::running(false)) ? dirname(Phar::running(false)) . '/' : __DIR__ . '/';
+Main::autoload('cryodrift\\fw', __DIR__.'/sys');
+Main::autoloader();
+
+$config = Main::readConfig();
+return Main::run($config);
 ```
 
-## data-loader
+What the core does (see `sys/Main.php`):
+- `Main::readConfig()` chooses CLI or Web config file and builds a `Config`
+- `Main::run($config)` instantiates `Core`, executes handlers, collects `Response`, and prints/logs
+- `Main::autoload()`/`Main::autoloader()` provide simple namespace→folder mapping
 
-- use to fetch html from server and insert into document
-- used in ui/memo.html
-- param format: apiname|destId|outer
-- optional param: outer replaces the outerHTML and only one childNode is allowed in Dokument
-- if outer is left out innerHTML gets replaced and many childNodes are allowed
-- params: apiname|destination|replacepos
-- params: (some apiname)|[self(keyword)|id|(.or empty for closest parent id)]|[outer(keyword)|(.or empty for inner)]
-- params example: memo|self|outer
-
- 
-### data-replace
-- data-replace="search|replace" replace data in destination path to whatever you want
-
-### data-loader-url
-- data-loader-url="{{ROUTE}}/{{query}}"
-- or
-- href="{{ROUTE}}/{{query}}"
-
-```html
-{{@}}memo{{@}}
-<div class="card mb-2">
-    <div class="card-body">
-        <button class="btn" href="{{ROUTE}}/{{query}}" data-loader="memo_delete|memo memo{{id}}||outer" data-loader-method="post">Delete</button>
-        <h5 class="card-title">{{aktiv}} {{status}} {{kat}} {{name}} {{title}}</h5>
-        <p class="card-text">{{content}}</p>
-    </div>
-</div>
-{{@}}memo{{@}}
-```
-
-- backend used in api::memo()
-
-```php
-$data = HtmlUi::addQuery($ctx, $data, ['id' => 'memo_id'], ['memo_id']);
-return $base->fromBlock('memo', true)->setAttributes(['memo' => $data]);
-```
-
-## data-
-
-- data-click (old version only click) and data-handler (new version every event)
-
-### data-click 
-
-- use this on a parent
-- can use any javascript module look at eventhandler.js how it works
-- used in eventhandler.js tablisttools.js
-
-### data-handler 
-
-- data-handler="/eventhandlers.js|click" 
-- use this on a parent
-- can use any javascript module look at eventhandler.js how it works
-- used in eventhandler.js tablisttools.js
-
-### data-click
-
-- use to make anything happen on element.click
-
-- "functionname|param1|param2|paramX functionname|targetId functionname"
-
-```html
- <button data-click="toggle|insert_box_fields toggle|insert_box_content"  type="button">Button</button>
-```
-
-### data-queryclick
-
-- use to restore a ui feature from url
-- clicks the Element when query state matches
-- params: query-param-name|query-param-value
-- this is boolean
--  
-
-```html
- <button data-queryclick="test|hallo" data-click="togglenext hide addquery|where|here" type="button">Here</button>
- <button class="g-dh" data-click="toggleprev hide remquery|where|here" type="button">There</button>
-```
-
-### data-observe
- 
-- everytime that div gets attached to the dom the scripts will run again
-- we run it also once when the page is ready
-
-```script
- import {dataObserver} from '/system.js';
- dataObserver(document.body)
-
-```
-```html
- <div data-observe="/scriptfile.js|method|param|..s"></div>
-```
+For deeper `sys` API documentation, read `sys/README_CORE.md`.
 
 
-# Extractcomp Tool
+### Configuration
 
-The extractcomp tool uses an external helper script git-filter.cmd (a wrapper you provide) to run git filter-repo and filter a repository to a specific subdirectory's history and optionally rewrite metadata across all commits.
+- Config lives under `.data/` by default (see `Config::$datadir`).
+- On CLI, `Main::readConfig('cli')` resolves a CLI‑specific config; for Web, a web config.
+- Handlers can declare their own config blocks (e.g., `src/user/Auth` expects `protect`, `cookiepassword`, etc.).
 
-- Command used: git-filter.cmd --path <subdir>/ --force [--replace-text <file>] [--replace-text <file>] ... [<extra args from -gitmeta> ...]
+Use environment and local config files to wire modules the way you want. The core’s config loader will include from these search paths (see `index.php`):
 
-Rewrite file format for --replace-text:
-- Each line defines one rewrite mapping applied across history
-- literal:old_text==>new_text
-- regex:/pattern/flags==>replacement
-
-Notes:
-- You can pass multiple -gitrewritefile arguments; each becomes a separate --replace-text file processed by git filter-repo.
-- Deprecated: extractcomp previously allowed -gitsearch and -gitreplace pairs. These are now internally converted into a temporary rewrite file with literal:search==>replace entries for compatibility.
-- The -gitmeta options have two roles:
-  - Flags starting with '-' (e.g., --mailmap PATH) are passed verbatim to git-filter.cmd to influence history rewrite.
-  - Key/value pairs (e.g., user.name John Doe, user.email john@example.com) are applied as git config in the working repo before we create commits so new commits use this identity. Aliases authorName/authorEmail are also accepted and mapped to user.name/user.email.
-  - If you provide authorName/authorEmail (or user.name/user.email), extractcomp auto-generates git filter-repo callbacks: --name-callback 'return b"<Name>"' and --email-callback 'return b"<email>"' unless you already passed these flags.
-
-Ensure your git-filter.cmd is on PATH and forwards arguments to git filter-repo, accepting all original filter-repo parameters. Non-flag tokens are not forwarded to git-filter-repo to avoid errors like "unrecognized arguments: authorName ...".
+- Project root
+- `src/`
+- `sys/`
 
 
-# ERRORS
+### Routing model
 
-## Missing session user!
+- The framework resolves handlers by route segments for web requests, and by CLI segments for console runs.
+- Handlers implement `cryodrift\fw\interface\Handler` and may use traits like `trait\CliHandler` to expose `@cli` methods.
+- CLI arguments are mapped by name and docblocks. Types like `ParamFile` or `ParamHidden` add UX niceties (stdin/files and hidden prompts).
 
-on cli you need -sessionuser="username"
-on web you need to have a session (install src/user)
+
+---
+
+### Module: Shell (`src/shell`)
+Developer convenience tools accessible as CLI commands.
+
+All commands accept `-file` as either stdin or a file path where applicable.
+
+- `undupe` — Remove duplicate lines
+  - Usage: `php index.php /shell undupe -file="input.txt"`
+  - Piped: `type input.txt | php index.php /shell undupe -file`
+
+- `sort` — Sort lines
+  - Usage: `php index.php /shell sort -file="input.txt"`
+
+- `group` — Group lines by tokens into a tree view
+  - Usage: `php index.php /shell group -file="commands.txt"`
+
+- `replace` — Search/replace in piped data or a file
+  - Usage: `php index.php /shell replace -search="from" -replace="to" -file="input.txt"`
+  - Piped: `type input.txt | php index.php /shell replace "from" "to" -file`
+
+- `screenshot` — Take a web screenshot via Chrome (uses your Chrome profile to avoid prompts)
+  - Flags: `-url`, `-local` (bool), `-small` (bool), `-open` (bool)
+  - Usage: `php index.php /shell screenshot -url="https://example.com" -small=1`
+
+Implementation heads‑up: see `src/shell/Cli.php` for details and the `@cli` docblocks.
+
+
+### Module: User (`src/user`)
+Small user CLI + web utilities with optional TOTP 2FA (Google Authenticator compatible).
+
+Core pieces:
+- `src/user/Cli.php` — register, login, change password, test flows
+- `src/user/Auth.php` — lightweight gatekeeper for protected routes using cookie‑bound sessions
+- `src/user/db/Repository.php` — simple persistence and credential/secret storage
+
+CLI commands:
+- `register` — create user, set 2FA secret if password meets policy
+  - `php index.php /user register -user="alice" -password`  (password will be prompted if left blank)
+- `login` — verify password (+2FA if enabled)
+  - `php index.php /user login -user="alice" -password -code=123456`
+- `changepw` — change password
+  - `php index.php /user changepw -user="alice" -password -newpassword`
+- `getsecret` — print user’s 2FA secret (after auth)
+- `getcode` — generate a current TOTP for a given secret
+- `test` — end‑to‑end self‑check across register→login
+- `keygen` — generate a random 2FA secret
+
+Configuration hints:
+- `passwordlen` (minimum length), `use2fa` (bool), and a `secretkey` used in the web flow.
+- `Auth` middleware expects `protect` array and a `cookiepassword` to decrypt session ids from cookies.
+
+Web flow:
+- `Auth::handle()` inspects the current path segments and enforces protection for configured routes.
+- In CLI mode, you can bypass via `-sessionuser`, but for Web the cookie/session must be valid.
+
+
+---
+
+### Developer UX
+
+- Discoverability via docblocks: methods annotated with `@cli` become commands when the handler uses `CliHandler`.
+- Strong typed params: framework resolves parameters (e.g., `ParamFile`, `ParamHidden`) and injects context.
+- Logging by default: see `sys/Core` helpers (`Core::log`, `Core::echo`, timestamps via `Core::time`).
+
+
+### Run modes
+
+- CLI (project entry): `php index.php /module command -flag=value`
+- PHAR: package the app as a `.phar` and run it directly
+  - Example: `php cryodrift.phar /shell undupe -file="input.txt"`
+  - Notes: `index.php` auto-detects PHAR via `Phar::running()` and `Main::pharmount()`; configure mounts in `Config::$pharmounts` if you need external file access
+- Composer bin: run via the installed executable
+  - Unix/macOS: `vendor/bin/cryodrift.php /shell undupe -file="input.txt"` (or `php vendor/bin/cryodrift.php ...`)
+  - Windows: `php vendor\\bin\\cryodrift.php /shell undupe -file="input.txt"`
+- Web: serve `public/` or point your server to `index.php`, then hit routes that map to your handlers.
+
+Docker samples are included for convenience (`docker-compose-*.yml`), but are optional.
+
+
+### Troubleshooting
+
+- Missing class? Check `index.php` include roots and namespaces. `cryodrift\fw` maps to `sys/`, project code maps to `src/`.
+- No output? Some handlers set response as "raw" and log to `.data/` — check `out.log` or `core.log` under `.data/`.
+- Phar mode: `Main::pharmount()` supports running as a phar; ensure mounts are configured in `Config::$pharmounts`.
+
+
+### Contributing
+
+- Keep changes minimal and focused; mirror surrounding code style.
+- Prefer small private helpers for one‑off reuse.
+- Reuse utilities from the `sys` namespace where possible.
+
+
+### License
+
+See the repository for licensing terms.
